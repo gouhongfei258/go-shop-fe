@@ -38,6 +38,7 @@ async function handlePay() {
     loading.value = false
   }
 }
+
 </script>
 
 <template>
@@ -68,6 +69,7 @@ async function handlePay() {
       >
         去支付
       </el-button>
+
     </div>
   </div>
 </template>

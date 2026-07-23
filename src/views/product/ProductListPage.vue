@@ -11,6 +11,8 @@ const route = useRoute()
 const products = ref<Product[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
+/** 后端不返回 total，用 hasMore 追踪是否还有下一页 */
+const hasMore = ref(false)
 
 const pagination = usePagination(20)
 
@@ -25,8 +27,10 @@ async function fetchProducts() {
       params.query = searchQuery.value
     }
     const res = await getProducts(params)
-    products.value = res.data
-    pagination.total.value = res.total ?? res.data.length
+    products.value = res?.data ?? []
+    const count = products.value.length
+    hasMore.value = count >= pagination.take.value
+    pagination.total.value = pagination.skip.value + count
   } catch {
     products.value = []
   } finally {
@@ -126,6 +130,7 @@ onMounted(() => {
         :current-page="pagination.currentPage.value"
         :page-count="pagination.pageCount.value"
         :total="pagination.total.value"
+        :has-more="hasMore"
         @update:current-page="handlePageChange"
       />
     </div>

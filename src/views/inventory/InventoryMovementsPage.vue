@@ -19,8 +19,8 @@ async function fetchMovements() {
       skip: pagination.skip.value,
       take: pagination.take.value,
     })
-    movements.value = res.data
-    pagination.total.value = res.total ?? movements.value.length
+    movements.value = res?.data ?? []
+    pagination.total.value = res?.total ?? movements.value.length
   } catch {
     movements.value = []
   } finally {

@@ -116,6 +116,8 @@ export interface Order {
   total_price: number
   products: OrderProduct[]
   created_at: string
+  status?: string
+  payment_status?: string
 }
 
 /** 订单商品 */
@@ -136,6 +138,7 @@ export interface Account {
   id: number
   name: string
   email: string
+  role?: string
 }
 
 /** 支付会话请求 */
@@ -156,13 +159,6 @@ export interface CheckoutSession {
   qrCode?: string
   payInfo?: string
   transactionNo: string
-}
-
-/** 客户门户请求 */
-export interface CustomerPortalInput {
-  accountId: number
-  email: string
-  name: string
 }
 
 /** 登录请求 */

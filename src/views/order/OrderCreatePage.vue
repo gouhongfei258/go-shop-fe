@@ -24,13 +24,23 @@ async function handleSubmit() {
       })),
     })
     ElMessage.success('订单创建成功')
-    cartStore.clear()
+    await cartStore.clear()
     router.push({ name: 'Payment', params: { orderId: res.data.id } })
   } catch {
     // 错误在拦截器中处理（如库存不足 400）
   } finally {
     submitting.value = false
   }
+}
+
+async function handleQuantityUpdate(item: { id: string; quantity: number }, newQty: number) {
+  if (newQty < 1) return
+  await cartStore.updateQuantity(item.id, newQty)
+}
+
+async function handleRemoveItem(id: string) {
+  await cartStore.removeItem(id)
+  ElMessage.success('已移除')
 }
 </script>
 
@@ -58,12 +68,12 @@ async function handleSubmit() {
           <el-table-column label="数量" width="120">
             <template #default="{ row }">
               <el-input-number
-                v-model="row.quantity"
+                v-model="(row as any).quantity"
                 :min="1"
                 :max="99"
                 size="small"
                 controls-position="right"
-                @change="cartStore.updateQuantity(row.id, row.quantity)"
+                @change="(val: number | undefined) => handleQuantityUpdate(row as any, val ?? 1)"
               />
             </template>
           </el-table-column>
@@ -76,7 +86,7 @@ async function handleSubmit() {
           </el-table-column>
           <el-table-column label="操作" width="80">
             <template #default="{ row }">
-              <el-button text type="danger" @click="cartStore.removeItem(row.id)">
+              <el-button text type="danger" :loading="cartStore.loading" @click="handleRemoveItem(row.id)">
                 删除
               </el-button>
             </template>

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import type { Review } from '@/types'
+import { ElMessage } from 'element-plus'
+import type { Review, Reply } from '@/types'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { likeReview, unlikeReview } from '@/api/reviews'
+import { likeReview, unlikeReview, getReplies, createReply } from '@/api/reviews'
 
 const props = defineProps<{
   review: Review
@@ -11,12 +12,17 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   liked: [reviewId: number]
-  edit: [review: Review]
   delete: [reviewId: number]
 }>()
 
 const router = useRouter()
 const authStore = useAuthStore()
+
+const replies = ref<Reply[]>([])
+const repliesVisible = ref(false)
+const repliesLoading = ref(false)
+const replyInput = ref('')
+const replySubmitting = ref(false)
 
 async function handleLike() {
   if (!authStore.isAuthenticated) {
@@ -36,6 +42,43 @@ async function handleLike() {
     emit('liked', props.review.id)
   } catch {
     // 错误已在拦截器中处理
+  }
+}
+
+async function toggleReplies() {
+  repliesVisible.value = !repliesVisible.value
+  if (repliesVisible.value && replies.value.length === 0) {
+    await fetchReplies()
+  }
+}
+
+async function fetchReplies() {
+  repliesLoading.value = true
+  try {
+    const res = await getReplies(props.review.id)
+    replies.value = res?.data ?? []
+  } catch {
+    replies.value = []
+  } finally {
+    repliesLoading.value = false
+  }
+}
+
+async function handleReply() {
+  if (!replyInput.value.trim()) {
+    ElMessage.warning('请输入回复内容')
+    return
+  }
+  replySubmitting.value = true
+  try {
+    await createReply(props.review.id, replyInput.value.trim())
+    ElMessage.success('回复成功')
+    replyInput.value = ''
+    await fetchReplies()
+  } catch {
+    // 错误在拦截器中处理
+  } finally {
+    replySubmitting.value = false
   }
 }
 </script>
@@ -62,21 +105,23 @@ async function handleLike() {
       </div>
       <div class="review-actions">
         <el-button
-          :type="review.liked_by_me ? 'primary' : 'default'"
+          size="small"
+          text
+          @click="toggleReplies"
+        >
+          <el-icon><ChatLineSquare /></el-icon>
+          回复
+        </el-button>
+        <el-button
+          :type="review.liked_by_me ? 'warning' : 'default'"
           size="small"
           text
           @click="handleLike"
         >
-          <el-icon><ThumbsUp /></el-icon>
-          {{ review.likes || '点赞' }}
-        </el-button>
-        <el-button
-          v-if="showActions"
-          size="small"
-          text
-          @click="emit('edit', review)"
-        >
-          编辑
+          <el-icon>
+            <component :is="review.liked_by_me ? 'StarFilled' : 'Star'" />
+          </el-icon>
+          {{ review.likes ?? 0 }}
         </el-button>
         <el-button
           v-if="showActions"
@@ -87,6 +132,50 @@ async function handleLike() {
         >
           删除
         </el-button>
+      </div>
+    </div>
+
+    <!-- 回复列表 -->
+    <div v-if="repliesVisible" class="reply-section">
+      <div v-if="repliesLoading" class="reply-loading">
+        <el-skeleton :count="2" animated>
+          <template #template>
+            <div style="display: flex; gap: 8px; padding: 8px 0">
+              <el-skeleton-item variant="circle" style="width: 24px; height: 24px" />
+              <el-skeleton-item variant="text" style="flex: 1" />
+            </div>
+          </template>
+        </el-skeleton>
+      </div>
+
+      <div v-else-if="replies.length === 0" class="reply-empty">
+        暂无回复
+      </div>
+
+      <div v-else class="reply-list">
+        <div v-for="reply in replies" :key="reply.id" class="reply-item">
+          <el-avatar :size="24">U</el-avatar>
+          <div class="reply-body">
+            <div class="reply-user">用户 {{ reply.user_id }}</div>
+            <div class="reply-content">{{ reply.content }}</div>
+            <div class="reply-time">{{ new Date(reply.created_at).toLocaleString('zh-CN') }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 回复输入 -->
+      <div v-if="authStore.isAuthenticated" class="reply-input-wrap">
+        <el-input
+          v-model="replyInput"
+          placeholder="写下你的回复..."
+          size="small"
+          :disabled="replySubmitting"
+          @keyup.enter="handleReply"
+        >
+          <template #append>
+            <el-button :loading="replySubmitting" @click="handleReply">发送</el-button>
+          </template>
+        </el-input>
       </div>
     </div>
   </div>
@@ -151,8 +240,67 @@ async function handleLike() {
   align-items: center;
 }
 
+.review-meta {
+  display: flex;
+  gap: 8px;
+}
+
 .review-actions {
   display: flex;
   gap: 4px;
+}
+
+// 回复区域
+.reply-section {
+  margin-top: 12px;
+  padding-left: 40px;
+  border-left: 2px solid #ebeef5;
+}
+
+.reply-loading {
+  padding: 8px 0;
+}
+
+.reply-empty {
+  font-size: 0.8rem;
+  color: #c0c4cc;
+  padding: 8px 0;
+}
+
+.reply-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reply-item {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.reply-body {
+  flex: 1;
+}
+
+.reply-user {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #606266;
+}
+
+.reply-content {
+  font-size: 0.85rem;
+  color: #303133;
+  margin: 2px 0;
+}
+
+.reply-time {
+  font-size: 0.7rem;
+  color: #c0c4cc;
+}
+
+.reply-input-wrap {
+  margin-top: 12px;
 }
 </style>

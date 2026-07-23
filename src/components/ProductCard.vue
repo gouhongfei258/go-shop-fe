@@ -20,11 +20,12 @@ function goDetail() {
         <el-icon :size="48" color="#c0c4cc"><Picture /></el-icon>
       </div>
       <div class="product-info">
-        <h3 class="product-name">{{ product.name }}</h3>
-        <p class="product-desc">{{ product.description }}</p>
+        <h3 class="product-name">{{ product?.name || product?.id }}</h3>
+        <p class="product-desc">{{ product?.description || '' }}</p>
         <div class="product-meta">
-          <span class="product-price">&yen;{{ product.price.toFixed(2) }}</span>
+          <span class="product-price">&yen;{{ (product?.price ?? 0).toFixed(2) }}</span>
           <el-tag
+            v-if="product?.stock"
             :type="
               product.stock.status === 'in_stock'
                 ? 'success'

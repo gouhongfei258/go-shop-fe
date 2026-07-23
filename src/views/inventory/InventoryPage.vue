@@ -23,8 +23,8 @@ async function fetchLowStock() {
   loading.value = true
   try {
     const res = await getLowStockProducts({ skip: pagination.skip.value, take: pagination.take.value })
-    items.value = res.data
-    pagination.total.value = res.total ?? items.value.length
+    items.value = res?.data ?? []
+    pagination.total.value = res?.total ?? items.value.length
   } catch {
     items.value = []
   } finally {

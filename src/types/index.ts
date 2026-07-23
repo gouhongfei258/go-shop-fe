@@ -19,7 +19,6 @@ export type {
   Account,
   CheckoutInput,
   CheckoutSession,
-  CustomerPortalInput,
   LoginInput,
   RegisterInput,
   AuthResponse,

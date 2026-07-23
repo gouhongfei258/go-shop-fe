@@ -12,8 +12,8 @@ async function fetchReviews() {
   loading.value = true
   try {
     const res = await getMyReviews({ skip: pagination.skip.value, take: pagination.take.value })
-    reviews.value = res.data
-    pagination.total.value = res.total ?? reviews.value.length
+    reviews.value = res?.data ?? []
+    pagination.total.value = res?.total ?? reviews.value.length
   } catch {
     reviews.value = []
   } finally {
@@ -28,9 +28,12 @@ async function handleDelete(reviewId: number) {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
     })
-    // 实现删除需要知道 product_id，可以从 review 数据中获取
-    ElMessage.success('评论已删除')
-    fetchReviews()
+    const review = reviews.value.find((r) => r.id === reviewId)
+    if (review) {
+      await deleteReview(review.product_id, review.id)
+      ElMessage.success('评论已删除')
+      fetchReviews()
+    }
   } catch {
     // 取消操作
   }

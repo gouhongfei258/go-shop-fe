@@ -4,8 +4,9 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
 import { getProductById, deleteProduct } from '@/api/products'
-import { getProductReviews, createReview, getReviewStats, updateReview, deleteReview } from '@/api/reviews'
+import { getProductReviews, createReview, getReviewStats, deleteReview } from '@/api/reviews'
 import { usePagination } from '@/composables/usePagination'
+import { SORT_OPTIONS } from '@/types'
 import type { ProductDetail, Review, ReviewInput, ReviewStats } from '@/types'
 
 const router = useRouter()
@@ -19,12 +20,12 @@ const productLoading = ref(true)
 const reviews = ref<Review[]>([])
 const stats = ref<ReviewStats | null>(null)
 const reviewsLoading = ref(true)
+const reviewSort = ref<'newest' | 'oldest' | 'highest' | 'lowest' | 'most_liked'>('newest')
 
 const reviewPagination = usePagination(5)
 
 // 评论弹窗
 const reviewDialogVisible = ref(false)
-const editingReview = ref<Review | null>(null)
 const reviewForm = reactive<ReviewInput>({
   rating: 5,
   title: '',
@@ -73,12 +74,17 @@ async function fetchReviews() {
   try {
     const id = route.params.id as string
     const [reviewsRes, statsRes] = await Promise.all([
-      getProductReviews(id, { skip: reviewPagination.skip.value, take: reviewPagination.take.value, sort: 'newest' }),
+      getProductReviews(id, { skip: reviewPagination.skip.value, take: reviewPagination.take.value, sort: reviewSort.value }),
       getReviewStats(id),
     ])
-    reviews.value = reviewsRes.data
+    reviews.value = reviewsRes.data ?? []
     reviewPagination.total.value = reviewsRes.total ?? 0
-    stats.value = statsRes.data
+    stats.value = {
+      ...(statsRes.data ?? {}),
+      average_rating: statsRes.data?.average_rating ?? 0,
+      total_reviews: statsRes.data?.total_reviews ?? 0,
+      rating_distribution: statsRes.data?.rating_distribution ?? {},
+    } as ReviewStats
   } catch {
     reviews.value = []
   } finally {
@@ -91,19 +97,15 @@ function openCreateReview() {
     router.push({ name: 'Login', query: { redirect: route.fullPath } })
     return
   }
-  editingReview.value = null
   reviewForm.rating = 5
   reviewForm.title = ''
   reviewForm.content = ''
   reviewDialogVisible.value = true
 }
 
-function openEditReview(review: Review) {
-  editingReview.value = review
-  reviewForm.rating = review.rating
-  reviewForm.title = review.title || ''
-  reviewForm.content = review.content
-  reviewDialogVisible.value = true
+function handleSortChange() {
+  reviewPagination.reset()
+  fetchReviews()
 }
 
 async function submitReview() {
@@ -115,13 +117,8 @@ async function submitReview() {
   reviewSubmitting.value = true
   try {
     const id = route.params.id as string
-    if (editingReview.value) {
-      await updateReview(id, editingReview.value.id, reviewForm)
-      ElMessage.success('评论已更新')
-    } else {
-      await createReview(id, reviewForm)
-      ElMessage.success('评论发布成功')
-    }
+    await createReview(id, reviewForm)
+    ElMessage.success('评论发布成功')
     reviewDialogVisible.value = false
     fetchReviews()
   } catch {
@@ -147,21 +144,40 @@ async function handleDeleteReview(reviewId: number) {
   }
 }
 
-function addToCart() {
-  if (product.value) {
+const cartLoading = ref(false)
+
+async function addToCart() {
+  if (!product.value) return
+  if (!authStore.isAuthenticated) {
     cartStore.addItem(product.value)
     ElMessage.success('已加入购物车')
+    return
+  }
+  cartLoading.value = true
+  try {
+    await cartStore.addItem(product.value)
+    ElMessage.success('已加入购物车')
+  } catch {
+    // 错误已在 store 或拦截器中处理
+  } finally {
+    cartLoading.value = false
   }
 }
 
-function goToOrder() {
+async function goToOrder() {
   if (!authStore.isAuthenticated) {
     router.push({ name: 'Login', query: { redirect: route.fullPath } })
     return
   }
-  if (product.value) {
-    cartStore.addItem(product.value)
-    router.push({ name: 'OrderCreate' })
+  if (!product.value) return
+  cartLoading.value = true
+  try {
+    await cartStore.addItem(product.value)
+    router.push({ name: 'Cart' })
+  } catch {
+    // 错误已在 store 或拦截器中处理
+  } finally {
+    cartLoading.value = false
   }
 }
 
@@ -209,15 +225,15 @@ onMounted(() => {
             <p class="detail-desc mt-md">{{ product.description }}</p>
 
             <div class="detail-actions mt-lg">
-              <el-button type="primary" size="large" @click="addToCart">
+              <el-button type="primary" size="large" :loading="cartLoading" @click="addToCart">
                 加入购物车
               </el-button>
-              <el-button type="danger" size="large" @click="goToOrder">
+              <el-button type="danger" size="large" :loading="cartLoading" @click="goToOrder">
                 立即购买
               </el-button>
             </div>
 
-            <div v-if="authStore.isAuthenticated && authStore.token" class="detail-owner-actions mt-md">
+            <div v-if="authStore.role === 'seller' || authStore.role === 'admin'" class="detail-owner-actions mt-md">
               <el-button @click="handleEdit">编辑商品</el-button>
               <el-button type="danger" plain @click="confirmDelete">删除商品</el-button>
             </div>
@@ -249,7 +265,17 @@ onMounted(() => {
       <!-- 评论区 -->
       <div class="section-card">
         <div class="review-section-header">
-          <h2 class="section-title">商品评论</h2>
+          <div class="review-section-left">
+            <h2 class="section-title">商品评论</h2>
+            <el-select v-model="reviewSort" size="small" style="width: 120px; margin-left: 12px" @change="handleSortChange">
+              <el-option
+                v-for="opt in SORT_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+          </div>
           <el-button type="primary" @click="openCreateReview">写评论</el-button>
         </div>
 
@@ -275,7 +301,6 @@ onMounted(() => {
             :key="review.id"
             :review="review"
             :show-actions="authStore.isAuthenticated"
-            @edit="openEditReview"
             @delete="handleDeleteReview"
           />
         </div>
@@ -292,7 +317,7 @@ onMounted(() => {
     <!-- 评论弹窗 -->
     <el-dialog
       v-model="reviewDialogVisible"
-      :title="editingReview ? '编辑评论' : '写评论'"
+      title="写评论"
       width="500px"
     >
       <el-form>
@@ -314,7 +339,7 @@ onMounted(() => {
       <template #footer>
         <el-button @click="reviewDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="reviewSubmitting" @click="submitReview">
-          {{ editingReview ? '保存' : '发布' }}
+          发布
         </el-button>
       </template>
     </el-dialog>
@@ -435,5 +460,10 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+}
+
+.review-section-left {
+  display: flex;
+  align-items: center;
 }
 </style>

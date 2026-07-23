@@ -1,23 +1,77 @@
 <script setup lang="ts">
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { getMyOrders } from '@/api/orders'
+import { getMyOrders, cancelOrder } from '@/api/orders'
 import type { Order } from '@/types'
 
 const router = useRouter()
 const orders = ref<Order[]>([])
 const loading = ref(true)
+const cancellingId = ref<number | null>(null)
+
+const statusMap: Record<string, { type: 'info' | 'warning' | 'success' | 'danger'; label: string }> = {
+  pending: { type: 'warning', label: '待处理' },
+  confirmed: { type: 'info', label: '已确认' },
+  shipped: { type: 'info', label: '已发货' },
+  delivered: { type: 'success', label: '已送达' },
+  cancelled: { type: 'danger', label: '已取消' },
+}
+
+const paymentStatusMap: Record<string, { type: 'info' | 'warning' | 'success' | 'danger'; label: string }> = {
+  unpaid: { type: 'warning', label: '未支付' },
+  paid: { type: 'success', label: '已支付' },
+  refunded: { type: 'info', label: '已退款' },
+}
+
+function getStatusTag(s: string | undefined) {
+  return statusMap[s ?? ''] ?? { type: 'info' as const, label: s || '未知' }
+}
+
+function getPaymentStatusTag(s: string | undefined) {
+  return paymentStatusMap[s ?? ''] ?? { type: 'info' as const, label: s || '未知' }
+}
 
 onMounted(async () => {
   try {
     const res = await getMyOrders()
-    orders.value = res.data
+    orders.value = res?.data ?? []
   } catch {
     ElMessage.error('获取订单列表失败')
   } finally {
     loading.value = false
   }
 })
+
+async function handleCancel(order: Order) {
+  if (order.status === 'cancelled') return
+
+  try {
+    await ElMessageBox.confirm(
+      `确定取消订单 #${order.id} 吗？`,
+      '取消订单',
+      { type: 'warning', confirmButtonText: '确定取消', cancelButtonText: '再想想' },
+    )
+  } catch {
+    return
+  }
+
+  cancellingId.value = order.id
+  try {
+    await cancelOrder(order.id)
+    ElMessage.success('订单已取消')
+  } catch {
+    // 错误在拦截器中处理
+  } finally {
+    cancellingId.value = null
+    // 无论成功或失败，都重新从后端获取最新订单列表
+    try {
+      const res = await getMyOrders()
+      orders.value = res?.data ?? []
+    } catch {
+      // 获取列表失败不影响主要流程
+    }
+  }
+}
 </script>
 
 <template>
@@ -47,8 +101,18 @@ onMounted(async () => {
     <div v-else class="orders-list">
       <el-card v-for="order in orders" :key="order.id" class="order-card" shadow="hover">
         <div class="order-header">
-          <span class="order-id">订单 #{{ order.id }}</span>
-          <span class="order-date">{{ new Date(order.created_at).toLocaleString('zh-CN') }}</span>
+          <div class="order-header-left">
+            <span class="order-id">订单 #{{ order.id }}</span>
+            <span class="order-date">{{ new Date(order.created_at).toLocaleString('zh-CN') }}</span>
+          </div>
+          <div class="order-header-tags">
+            <el-tag v-if="order.status" :type="getStatusTag(order.status).type" size="small">
+              {{ getStatusTag(order.status).label }}
+            </el-tag>
+            <el-tag v-if="order.payment_status" :type="getPaymentStatusTag(order.payment_status).type" size="small">
+              {{ getPaymentStatusTag(order.payment_status).label }}
+            </el-tag>
+          </div>
         </div>
         <el-divider style="margin: 12px 0" />
         <div class="order-products">
@@ -61,9 +125,24 @@ onMounted(async () => {
           <span class="order-total">
             合计：<strong>&yen;{{ order.total_price.toFixed(2) }}</strong>
           </span>
-          <el-button type="primary" @click="router.push({ name: 'Payment', params: { orderId: order.id } })">
-            去支付
-          </el-button>
+          <div class="order-actions">
+            <el-button
+              v-if="order.status === 'pending' || !order.status"
+              size="small"
+              :loading="cancellingId === order.id"
+              @click="handleCancel(order)"
+            >
+              取消订单
+            </el-button>
+            <el-button
+              v-if="order.payment_status !== 'paid'"
+              type="primary"
+              :disabled="order.status === 'cancelled'"
+              @click="router.push({ name: 'Payment', params: { orderId: order.id } })"
+            >
+              去支付
+            </el-button>
+          </div>
         </div>
       </el-card>
     </div>
@@ -81,6 +160,19 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.order-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.order-header-tags {
+  display: flex;
+  gap: 6px;
 }
 
 .order-id {
@@ -106,6 +198,11 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   margin-top: 8px;
+}
+
+.order-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .order-total {

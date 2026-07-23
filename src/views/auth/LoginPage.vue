@@ -2,11 +2,13 @@
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useCartStore } from '@/stores/cart'
 import { login } from '@/api/auth'
 import type { LoginInput } from '@/types'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const cartStore = useCartStore()
 
 const form = reactive<LoginInput>({
   email: '',
@@ -25,6 +27,8 @@ async function handleLogin() {
   try {
     const res = await login(form)
     authStore.setToken(res.data.token)
+    // 登录后从后端加载购物车
+    await cartStore.fetchCart()
     ElMessage.success('登录成功')
 
     const redirect = (router.currentRoute.value.query.redirect as string) || '/'

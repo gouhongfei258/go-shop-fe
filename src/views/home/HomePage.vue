@@ -15,10 +15,10 @@ onMounted(async () => {
   try {
     if (authStore.isAuthenticated) {
       const res = await getPersonalizedRecommendations({ take: 20 })
-      products.value = res.data
+      products.value = res?.data ?? []
     } else {
       const res = await getRecommendations({ take: 20 })
-      products.value = res.data
+      products.value = res?.data ?? []
     }
   } catch {
     ElMessage.error('获取推荐商品失败')
